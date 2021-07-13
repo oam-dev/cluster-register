@@ -1,0 +1,10 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: cluster-register
+spec:
+  components:
+    - name: register
+      type: cluster-register
+      properties:
+        clusterSecret: spoke-kubeconfig
