@@ -64,7 +64,7 @@ func (c *Cluster) GetSpokeClusterKubeConfig(ctx context.Context, name string, ns
 	spokeCmdV1Config := new(clientcmdapiv1.Config)
 	err = yaml.Unmarshal(configData, spokeCmdV1Config)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	kubeConfigGetter := func() (*clientcmdapi.Config, error) {
@@ -90,7 +90,7 @@ func (c *Cluster) GetSpokeClusterKubeConfig(ctx context.Context, name string, ns
 }
 
 // GenerateHubClusterKubeConfig generate hub-cluster's kubeconfig for spoke-cluster
-func (c *Cluster) GenerateHubClusterKubeConfig(ctx context.Context) (*clientcmdapiv1.Config, error) {
+func (c *Cluster) GenerateHubClusterKubeConfig(ctx context.Context, ip string) (*clientcmdapiv1.Config, error) {
 
 	// 1. get ca cert from configMap kube-public/cluster-info
 	configMap := new(corev1.ConfigMap)
@@ -113,6 +113,10 @@ func (c *Cluster) GenerateHubClusterKubeConfig(ctx context.Context) (*clientcmda
 	if len(kubeConfig.Clusters) != 1 {
 		klog.InfoS("the clusters num of kubeconfig was wrong", "expect", 1, "actual", len(kubeConfig.Clusters))
 		return nil, fmt.Errorf("the clusters num of kubeconfig was wrong expect %d actual %d", 1, len(kubeConfig.Clusters))
+	}
+
+	if len(ip) != 0 {
+		kubeConfig.Clusters[0].Cluster.Server = ip
 	}
 	kubeConfig.Clusters[0].Name = common.HubClusterName
 	kubeConfig.Contexts = []clientcmdapiv1.NamedContext{

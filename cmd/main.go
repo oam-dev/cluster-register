@@ -15,9 +15,11 @@ import (
 func main() {
 	var clusterName string
 	var secretName string
+	var hubIP string
 
 	flag.StringVar(&clusterName, "cluster-name", "", "the name of managed cluster")
 	flag.StringVar(&secretName, "secret-name", "", "secret name which store the kubeconfig of managed cluster")
+	flag.StringVar(&hubIP, "ip", "", "apiserver ip")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -42,7 +44,7 @@ func main() {
 	}
 
 	klog.Info("generate the token for spoke-cluster to connect hub-cluster")
-	hubKubeConfig, err := hubCluster.GenerateHubClusterKubeConfig(ctx)
+	hubKubeConfig, err := hubCluster.GenerateHubClusterKubeConfig(ctx, hubIP)
 	if err != nil {
 		klog.InfoS("Fail to generate the token for spoke-cluster", "err", err)
 		os.Exit(1)
