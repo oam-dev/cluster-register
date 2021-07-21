@@ -2,45 +2,65 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"os"
 
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	"github.com/oam-dev/cluster-register/pkg/common"
 	"github.com/oam-dev/cluster-register/pkg/hub"
 	"github.com/oam-dev/cluster-register/pkg/spoke"
 )
 
 func main() {
 	var clusterName string
-	var secretName string
 	var hubIP string
+	var decode bool
+	var spokeInfo spoke.SpokeInfo
+	flag.StringVar(&hubIP, "hub-api-server", "", "external apiserver address of hub cluster")
+	flag.StringVar(&clusterName, "cluster-name", "", "name of managed cluster")
+	flag.StringVar(&spokeInfo.CACert, "cluster-ca-cert", "", "ca certificate of managed cluster")
+	flag.StringVar(&spokeInfo.ClientCert, "client-cert", "", "ca certificate of client for TLS auth")
+	flag.StringVar(&spokeInfo.ClientKey, "client-key", "", "key of client for TLS auth")
+	flag.StringVar(&spokeInfo.APIServer, "api-server-internet", "", "external apiserver address of managed cluster")
+	flag.StringVar(&spokeInfo.KubeConfig, "kube-config", "", "kubeconfig of managed cluster")
+	flag.BoolVar(&decode, "decode", false, "decode the parameter")
 
-	flag.StringVar(&clusterName, "cluster-name", "", "the name of managed cluster")
-	flag.StringVar(&secretName, "secret-name", "", "secret name which store the kubeconfig of managed cluster")
-	flag.StringVar(&hubIP, "ip", "", "apiserver ip")
 	flag.Parse()
+
+	if decode {
+		clusterName = DecodeParameter(clusterName)
+		spokeInfo.CACert = DecodeParameter(spokeInfo.CACert)
+		spokeInfo.ClientCert = DecodeParameter(spokeInfo.ClientCert)
+		spokeInfo.ClientKey = DecodeParameter(spokeInfo.ClientKey)
+		spokeInfo.APIServer = DecodeParameter(spokeInfo.APIServer)
+		spokeInfo.KubeConfig = DecodeParameter(spokeInfo.KubeConfig)
+	}
 
 	ctx := context.Background()
 
 	// 1. connect to hub-cluster, which job(ocm-register-assistant) was deployed to
-	hubCluster, err := hub.NewHubCluster(common.Scheme, nil)
+	hubCluster, err := hub.NewHubCluster(nil)
 	if err != nil {
 		klog.InfoS("Fail to create client connect to hub cluster")
 		os.Exit(1)
 	}
 
-	// 2. get spoke-cluster's kubeconfig from Secret
-	ns := os.Getenv("POD_NAMESPACE")
-	if ns == "" {
-		klog.InfoS("Fail to get pod namespace")
-		os.Exit(1)
-	}
-	spokeConfig, err := hubCluster.GetSpokeClusterKubeConfig(ctx, secretName, ns)
-	if err != nil || spokeConfig == nil {
-		klog.InfoS("Fail to get spoke-cluster kubeconfig", "err", err)
-		os.Exit(1)
+	var spokeConfig *rest.Config
+	if len(spokeInfo.KubeConfig) != 0 {
+		spokeConfig, err = hubCluster.GetSpokeClusterConfig(spokeInfo.KubeConfig)
+		if err != nil || spokeConfig == nil {
+			klog.InfoS("Fail to get spoke-cluster kubeconfig", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		legoConfig := spokeInfo.CreateKubeConfig()
+		spokeConfig, err = hub.ConvertSpokeKubeConfig(&legoConfig)
+		if err != nil || spokeConfig == nil {
+			klog.InfoS("Fail to convert spoke-cluster kubeconfig", "err", err)
+			os.Exit(1)
+		}
 	}
 
 	klog.Info("generate the token for spoke-cluster to connect hub-cluster")
@@ -50,8 +70,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. connect to spoke-cluster
-	spokeCluster, err := spoke.NewSpokeCluster(clusterName, common.Scheme, spokeConfig, hubKubeConfig)
+	// 2. connect to spoke-cluster
+	spokeCluster, err := spoke.NewSpokeCluster(clusterName, spokeConfig, hubKubeConfig)
 	if err != nil {
 		klog.InfoS("Fail to connect spoke cluster", "err", err)
 		os.Exit(1)
@@ -80,4 +100,9 @@ func main() {
 	klog.InfoS("successfully register cluster", "name", clusterName)
 
 	os.Exit(0)
+}
+
+func DecodeParameter(data string) string {
+	decode, _ := base64.StdEncoding.DecodeString(data)
+	return string(decode)
 }

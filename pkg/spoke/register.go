@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"text/template"
@@ -12,7 +13,6 @@ import (
 	"github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
@@ -26,6 +26,57 @@ type Cluster struct {
 	Name string
 	Args common.Args
 	HubInfo
+}
+
+type SpokeInfo struct {
+	CACert     string
+	ClientCert string
+	ClientKey  string
+	APIServer  string
+	KubeConfig string
+}
+
+func (s SpokeInfo) CreateKubeConfig() clientcmdapiv1.Config {
+
+	var kubeConfig clientcmdapiv1.Config
+
+	caCert, _ := base64.StdEncoding.DecodeString(s.CACert)
+	clientCert, _ := base64.StdEncoding.DecodeString(s.ClientCert)
+	clientKey, _ := base64.StdEncoding.DecodeString(s.ClientKey)
+
+	kubeConfig.Clusters = []clientcmdapiv1.NamedCluster{
+		{
+			Name: "spoke",
+			Cluster: clientcmdapiv1.Cluster{
+				Server:                   s.APIServer,
+				CertificateAuthorityData: caCert,
+			},
+		},
+	}
+
+	kubeConfig.Contexts = []clientcmdapiv1.NamedContext{
+		{
+			Name: "init",
+			Context: clientcmdapiv1.Context{
+				Cluster:   "spoke",
+				AuthInfo:  "register-job",
+				Namespace: "default",
+			},
+		},
+	}
+	kubeConfig.CurrentContext = "init"
+	kubeConfig.AuthInfos = []clientcmdapiv1.NamedAuthInfo{
+		{
+			Name: "register-job",
+			AuthInfo: clientcmdapiv1.AuthInfo{
+				ClientCertificateData: clientCert,
+				ClientKeyData:         clientKey,
+			},
+		},
+	}
+	res, _ := yaml.Marshal(kubeConfig)
+	klog.Info(string(res))
+	return kubeConfig
 }
 
 type HubInfo struct {
@@ -45,9 +96,9 @@ func getHubAPIServer(hubConfig *clientcmdapiv1.Config) (string, error) {
 	return cluster.Server, nil
 }
 
-func NewSpokeCluster(name string, schema *runtime.Scheme, config *rest.Config, hubConfig *clientcmdapiv1.Config) (*Cluster, error) {
+func NewSpokeCluster(name string, config *rest.Config, hubConfig *clientcmdapiv1.Config) (*Cluster, error) {
 	args := common.Args{
-		Schema: schema,
+		Schema: common.Scheme,
 	}
 	err := args.SetConfig(config)
 	if err != nil {
@@ -141,13 +192,13 @@ func applyHubKubeConfig(ctx context.Context, k8sClient client.Client, file strin
 	err = k8sClient.Get(ctx, client.ObjectKey{Namespace: kubeConfigSecret.Namespace, Name: kubeConfigSecret.Name}, kubeConfigSecret)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			klog.InfoS("create secret", "object", klog.KObj(kubeConfigSecret))
+			klog.V(common.LogDebug).InfoS("create secret", "object", klog.KObj(kubeConfigSecret))
 			return k8sClient.Create(ctx, kubeConfigSecret)
 		}
 		return err
 	}
 
-	klog.InfoS("update secret", "object", klog.KObj(kubeConfigSecret))
+	klog.V(common.LogDebug).InfoS("update secret", "object", klog.KObj(kubeConfigSecret))
 	return k8sClient.Update(ctx, kubeConfigSecret)
 }
 
@@ -175,11 +226,11 @@ func applyKlusterlet(ctx context.Context, k8sClient client.Client, file string, 
 	err = k8sClient.Get(ctx, client.ObjectKey{Name: klusterlet.Name, Namespace: klusterlet.Namespace}, klusterlet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			klog.InfoS("create klusterlet", "object", klog.KObj(klusterlet))
+			klog.V(common.LogDebug).InfoS("create klusterlet", "object", klog.KObj(klusterlet))
 			return k8sClient.Create(ctx, klusterlet)
 		}
 		return err
 	}
-	klog.InfoS("update klusterlet", "object", klog.KObj(klusterlet))
+	klog.V(common.LogDebug).InfoS("update klusterlet", "object", klog.KObj(klusterlet))
 	return k8sClient.Update(ctx, klusterlet)
 }

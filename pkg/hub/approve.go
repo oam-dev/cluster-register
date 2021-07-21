@@ -13,7 +13,6 @@ import (
 	"github.com/ghodss/yaml"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -37,9 +36,9 @@ type Cluster struct {
 	common.Args
 }
 
-func NewHubCluster(schema *runtime.Scheme, config *rest.Config) (*Cluster, error) {
+func NewHubCluster(config *rest.Config) (*Cluster, error) {
 	args := common.Args{
-		Schema: schema,
+		Schema: common.Scheme,
 	}
 	err := args.SetConfig(config)
 	if err != nil {
@@ -54,39 +53,37 @@ func NewHubCluster(schema *runtime.Scheme, config *rest.Config) (*Cluster, error
 	}, nil
 }
 
-func (c *Cluster) GetSpokeClusterKubeConfig(ctx context.Context, name string, ns string) (*rest.Config, error) {
-	secret := new(corev1.Secret)
-	err := c.Client.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, secret)
-	if err != nil {
-		return nil, err
-	}
-	configData := secret.Data["kubeconfig"]
-	spokeCmdV1Config := new(clientcmdapiv1.Config)
-	err = yaml.Unmarshal(configData, spokeCmdV1Config)
-	if err != nil {
-		return nil, err
-	}
-
-	kubeConfigGetter := func() (*clientcmdapi.Config, error) {
-		newData, err := yaml.Marshal(spokeCmdV1Config)
+func newConfigGetter(configV1 *clientcmdapiv1.Config) clientcmd.KubeconfigGetter {
+	return func() (*clientcmdapi.Config, error) {
+		newData, err := yaml.Marshal(configV1)
 		if err != nil {
 			return nil, err
 		}
 
 		// convert *clientcmdapiv1.config to *clientcmdapi.config
-		spokeCmdConfig, err := clientcmd.Load(newData)
+		config, err := clientcmd.Load(newData)
 		if err != nil {
 			return nil, err
 		}
-		return spokeCmdConfig, nil
+		return config, nil
 	}
+}
 
-	// convert *clientcmdapi.config to *rest.Config
-	spokeConfig, err := clientcmd.BuildConfigFromKubeconfigGetter("", kubeConfigGetter)
+func ConvertSpokeKubeConfig(config *clientcmdapiv1.Config) (*rest.Config, error) {
+	spokeConfig, err := clientcmd.BuildConfigFromKubeconfigGetter("", newConfigGetter(config))
 	if err != nil {
 		return nil, err
 	}
 	return spokeConfig, nil
+}
+
+func (c *Cluster) GetSpokeClusterConfig(kubeconfig string) (*rest.Config, error) {
+	spokeCmdV1Config := new(clientcmdapiv1.Config)
+	err := yaml.Unmarshal([]byte(kubeconfig), spokeCmdV1Config)
+	if err != nil {
+		return nil, err
+	}
+	return ConvertSpokeKubeConfig(spokeCmdV1Config)
 }
 
 // GenerateHubClusterKubeConfig generate hub-cluster's kubeconfig for spoke-cluster
@@ -97,10 +94,10 @@ func (c *Cluster) GenerateHubClusterKubeConfig(ctx context.Context, ip string) (
 	if err := c.Client.Get(ctx, client.ObjectKey{Name: "cluster-info", Namespace: "kube-public"}, configMap); err != nil {
 		return nil, err
 	}
-	cofigMapData := configMap.Data["kubeconfig"]
+	configMapData := configMap.Data["kubeconfig"]
 
 	kubeConfig := new(clientcmdapiv1.Config)
-	if err := yaml.Unmarshal([]byte(cofigMapData), kubeConfig); err != nil {
+	if err := yaml.Unmarshal([]byte(configMapData), kubeConfig); err != nil {
 		return nil, err
 	}
 
@@ -111,7 +108,7 @@ func (c *Cluster) GenerateHubClusterKubeConfig(ctx context.Context, ip string) (
 	}
 
 	if len(kubeConfig.Clusters) != 1 {
-		klog.InfoS("the clusters num of kubeconfig was wrong", "expect", 1, "actual", len(kubeConfig.Clusters))
+		klog.V(common.LogDebug).InfoS("the clusters num of kubeconfig was wrong", "expect", 1, "actual", len(kubeConfig.Clusters))
 		return nil, fmt.Errorf("the clusters num of kubeconfig was wrong expect %d actual %d", 1, len(kubeConfig.Clusters))
 	}
 
@@ -164,8 +161,8 @@ func (c *Cluster) GetHubUserToken(ctx context.Context) (string, error) {
 	err = wait.PollImmediate(2*time.Second, 20*time.Second, func() (bool, error) {
 		err = c.Client.Get(ctx, saKey, serviceAccount)
 		if err != nil {
-			klog.InfoS("Fail to get serviceAccount", "object", klog.KRef(saKey.Namespace, saKey.Name), "err", err)
-			return false, err
+			klog.V(common.LogDebug).InfoS("Fail to get serviceAccount", "object", klog.KRef(saKey.Namespace, saKey.Name), "err", err)
+			return false, nil
 		}
 		for _, objectRef := range serviceAccount.Secrets {
 			if strings.HasPrefix(objectRef.Name, saKey.Name) {
@@ -173,7 +170,7 @@ func (c *Cluster) GetHubUserToken(ctx context.Context) (string, error) {
 				return true, nil
 			}
 		}
-		klog.InfoS("Fail to find secret token")
+		klog.V(common.LogDebug).InfoS("Fail to find secret token")
 		return false, nil
 	})
 	if err != nil {
@@ -185,8 +182,7 @@ func (c *Cluster) GetHubUserToken(ctx context.Context) (string, error) {
 	err = wait.PollImmediate(2*time.Second, 20*time.Second, func() (bool, error) {
 		err = c.Client.Get(ctx, secretKey, secret)
 		if err != nil {
-			klog.Error(err)
-			return false, err
+			return false, nil
 		}
 		if len(secret.Data["token"]) == 0 {
 			return false, nil
@@ -194,10 +190,7 @@ func (c *Cluster) GetHubUserToken(ctx context.Context) (string, error) {
 		token = string(secret.Data["token"])
 		return true, nil
 	})
-	if err != nil {
-		return token, err
-	}
-	return token, nil
+	return token, err
 }
 
 func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) error {
@@ -211,7 +204,7 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 	csrList := new(certificatesv1.CertificateSigningRequestList)
 	err := c.Client.List(ctx, csrList, listOpts...)
 	if err != nil {
-		klog.InfoS("Fail to get csr")
+		klog.V(common.LogDebug).InfoS("Fail to get csr")
 		return err
 	}
 
@@ -235,7 +228,7 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 
 	// if alreaady approved, then nothing to do
 	if !approved {
-		fmt.Printf("CSR %s already approved\n", csr.Name)
+		klog.V(common.LogDebug).InfoS("Already approved CSR", "name", csr.Name)
 
 		if csr.Status.Conditions == nil {
 			csr.Status.Conditions = make([]certificatesv1.CertificateSigningRequestCondition, 0)
@@ -265,7 +258,7 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 	mc := new(ocmclusterv1.ManagedCluster)
 	err = c.Client.Get(ctx, client.ObjectKey{Name: clusterName}, mc)
 	if err != nil {
-		klog.InfoS("Fail to get managedCluster", "obj", klog.KObj(mc))
+		klog.V(common.LogDebug).InfoS("Fail to get managedCluster", "obj", klog.KObj(mc))
 		return err
 	}
 
@@ -287,12 +280,12 @@ func (c *Cluster) Wait4SpokeClusterReady(ctx context.Context, clusterName string
 	mc := new(ocmclusterv1.ManagedCluster)
 
 	startTime := time.Now()
-	err := wait.PollImmediate(30*time.Second, 10*time.Minute, func() (done bool, err error) {
-		klog.InfoS("Waiting for register request", "waitTime", time.Since(startTime))
+	err := wait.PollImmediate(10*time.Second, 10*time.Minute, func() (done bool, err error) {
+		klog.V(common.LogDebug).InfoS("Waiting for register request", "waitTime", time.Since(startTime))
 		err = c.Client.List(ctx, csrList, listOpts...)
 		if err != nil {
-			klog.InfoS("Fail to get CertificateSigningRequestList")
-			return false, err
+			klog.V(common.LogDebug).InfoS("Fail to get CertificateSigningRequestList")
+			return false, nil
 		}
 		if len(csrList.Items) < 1 {
 			return false, nil

@@ -16,7 +16,6 @@ spec:
         	apiVersion: "batch/v1"
         	kind:       "Job"
         	spec: {
-                backoffLimit: 100
         		template: {
         			spec: {
         				containers: [{
@@ -27,7 +26,15 @@ spec:
         					}]
         					image:           "oamdev/cluster-register:v1.0"
         					imagePullPolicy: "Always"
-        					command: ["/app", "--cluster-name=" + "\(clusterInfo.name)", "--secret-name=" + "\(parameter.clusterSecret)", "--ip="+"\(parameter.ip)"]
+        					command: [
+        						"/app", "--cluster-name=" + "\(clusterInfo.name)",
+        						"--hub-api-server=" + "\(parameter.hubAPIServer)",
+        						"--cluster-ca-cert=" + "\(clusterInfo.cluster_ca_cert)",
+        						"--client-cert=" + "\(clusterInfo.client_cert)",
+        						"--client-key=" + "\(clusterInfo.client_key)",
+        						"--api-server-internet=" + "\(clusterInfo.api_server_internet)",
+        						"--kube-config=" + "\(clusterInfo.kubeconfig)",
+        					]
         				}]
         				restartPolicy:      "OnFailure"
         				serviceAccountName: "cluster-register"
@@ -117,9 +124,14 @@ spec:
         	// +insertSecretTo=clusterInfo
         	clusterSecret: string
 
-        	ip: *"" | string
+        	hubAPIServer: *"" | string
         }
 
         clusterInfo: {
-        	name: string
+        	name:                *"" | string
+        	cluster_ca_cert:     *"" | string
+        	client_cert:         *"" | string
+        	client_key:          *"" | string
+        	api_server_internet: *"" | string
+        	kubeconfig:          *"" | string
         }
