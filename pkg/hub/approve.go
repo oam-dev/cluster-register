@@ -208,49 +208,42 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 		return err
 	}
 
-	if len(csrList.Items) != 1 {
+	if len(csrList.Items) < 1 {
 		return fmt.Errorf("csr number of csrList is wrong except: 1, actual: %d", len(csrList.Items))
 	}
 
-	csrName := csrList.Items[0].Name
-
-	csr := new(certificatesv1.CertificateSigningRequest)
-	err = c.Client.Get(ctx, client.ObjectKey{Name: csrName}, csr)
-	if err != nil {
-		return err
-	}
-
-	approved, denied := checkCsrStatus(&csr.Status)
-	if denied {
-		fmt.Printf("CSR %s already denied\n", csr.Name)
-		return nil
-	}
-
-	// if alreaady approved, then nothing to do
-	if !approved {
-		klog.V(common.LogDebug).InfoS("Already approved CSR", "name", csr.Name)
-
-		if csr.Status.Conditions == nil {
-			csr.Status.Conditions = make([]certificatesv1.CertificateSigningRequestCondition, 0)
+	for _, csr := range csrList.Items {
+		approved, denied := checkCsrStatus(&csr.Status)
+		if denied {
+			fmt.Printf("CSR %s already denied\n", csr.Name)
+			return nil
 		}
 
-		csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
-			Status:         corev1.ConditionTrue,
-			Type:           certificatesv1.CertificateApproved,
-			Reason:         fmt.Sprintf("%s Approve", "ocm-register-assistant "),
-			Message:        fmt.Sprintf("This CSR was approved by %s certificate approve.", "ocm-register-assistant"),
-			LastUpdateTime: metav1.Now(),
-		})
+		// if alreaady approved, then nothing to do
+		if !approved {
 
-		clientset, err := kubernetes.NewForConfig(c.KubeConfig)
-		if err != nil {
-			klog.Error(err)
-			return err
-		}
+			if csr.Status.Conditions == nil {
+				csr.Status.Conditions = make([]certificatesv1.CertificateSigningRequestCondition, 0)
+			}
 
-		signingRequest := clientset.CertificatesV1().CertificateSigningRequests()
-		if _, err = signingRequest.UpdateApproval(ctx, csr.Name, csr, metav1.UpdateOptions{}); err != nil {
-			return err
+			csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{
+				Status:         corev1.ConditionTrue,
+				Type:           certificatesv1.CertificateApproved,
+				Reason:         fmt.Sprintf("%s Approve", "ocm-register-assistant "),
+				Message:        fmt.Sprintf("This CSR was approved by %s certificate approve.", "ocm-register-assistant"),
+				LastUpdateTime: metav1.Now(),
+			})
+
+			clientset, err := kubernetes.NewForConfig(c.KubeConfig)
+			if err != nil {
+				klog.Error(err)
+				return err
+			}
+
+			signingRequest := clientset.CertificatesV1().CertificateSigningRequests()
+			if _, err = signingRequest.UpdateApproval(ctx, csr.Name, &csr, metav1.UpdateOptions{}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -264,7 +257,9 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 
 	if !mc.Spec.HubAcceptsClient {
 		mc.Spec.HubAcceptsClient = true
-		return c.Client.Update(ctx, mc)
+		if err = c.Client.Update(ctx, mc); err != nil {
+			return nil
+		}
 	}
 
 	return nil

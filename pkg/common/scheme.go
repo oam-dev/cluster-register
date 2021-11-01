@@ -6,6 +6,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ocmclusterv1 "open-cluster-management.io/api/cluster/v1"
 	ocmapiv1 "open-cluster-management.io/api/operator/v1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 )
 
 var (
@@ -17,4 +18,5 @@ func init() {
 	_ = crdv1.AddToScheme(Scheme)
 	_ = ocmapiv1.Install(Scheme)
 	_ = ocmclusterv1.Install(Scheme)
+	_ = ocmworkv1.Install(Scheme)
 }
