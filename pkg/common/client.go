@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	OpenClusterManagementNamespace    = "open-cluster-management"
-	BootstrapSAName                   = "cluster-bootstrap"
-	HubClusterName                    = "hub"
+	OpenClusterManagementNamespace = "open-cluster-management"
+	BootstrapSAName                = "cluster-bootstrap"
+	HubClusterName                 = "hub"
 )
 
 type Args struct {
@@ -77,7 +77,6 @@ func ApplyK8sResource(ctx context.Context, f embed.FS, k8sClient client.Client, 
 			klog.InfoS("Fail to create resource", "object", klog.KObj(k8sObject), "apiVersion", k8sObject.GetAPIVersion(), "kind", k8sObject.GetKind())
 			return err
 		}
-		klog.InfoS("Successfully create resource", "object", klog.KObj(k8sObject), "apiVersion", k8sObject.GetAPIVersion(), "kind", k8sObject.GetKind())
 	}
 	return nil
 }
