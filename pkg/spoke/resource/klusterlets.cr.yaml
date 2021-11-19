@@ -3,8 +3,8 @@ kind: Klusterlet
 metadata:
   name: klusterlet
 spec:
-  registrationImagePullSpec: quay.io/open-cluster-management/registration
-  workImagePullSpec: quay.io/open-cluster-management/work
+  registrationImagePullSpec: quay.io/open-cluster-management/registration:v0.5.0
+  workImagePullSpec: quay.io/open-cluster-management/work:v0.5.0
   clusterName: {{ .Name }}
   namespace: open-cluster-management-agent
   externalServerURLs:
