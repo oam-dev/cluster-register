@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig"
 	"github.com/ghodss/yaml"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	"k8s.io/klog/v2"
@@ -159,6 +161,40 @@ func (c *Cluster) InitSpokeClusterEnv(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Cluster) WaitForRegistrationOperatorReady(ctx context.Context) error {
+	return wait.PollImmediateUntil(time.Second, func() (bool, error) {
+		podList := &corev1.PodList{}
+		err := c.Args.Client.List(ctx, podList,
+			client.InNamespace("open-cluster-management"),
+			client.MatchingLabels{"app": "klusterlet"})
+		if err != nil {
+			return false, err
+		}
+		atLeastOnceRunning := false
+		for _, pod := range podList.Items {
+			atLeastOnceRunning = atLeastOnceRunning || pod.Status.Phase == corev1.PodRunning
+		}
+		return atLeastOnceRunning, nil
+	}, ctx.Done())
+}
+
+func (c *Cluster) WaitForRegistrationAgentReady(ctx context.Context) error {
+	return wait.PollImmediateUntil(time.Second, func() (bool, error) {
+		podList := &corev1.PodList{}
+		err := c.Args.Client.List(ctx, podList,
+			client.InNamespace("open-cluster-management-agent"),
+			client.MatchingLabels{"app": "klusterlet-registration-agent"})
+		if err != nil {
+			return false, err
+		}
+		atLeastOnceRunning := false
+		for _, pod := range podList.Items {
+			atLeastOnceRunning = atLeastOnceRunning || pod.Status.Phase == corev1.PodRunning
+		}
+		return atLeastOnceRunning, nil
+	}, ctx.Done())
 }
 
 func applyHubKubeConfig(ctx context.Context, k8sClient client.Client, file string, kubeConfig *clientcmdapiv1.Config) error {

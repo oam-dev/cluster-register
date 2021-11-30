@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-
 	"github.com/ghodss/yaml"
+	"github.com/pkg/errors"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -265,7 +265,7 @@ func (c *Cluster) RegisterSpokeCluster(ctx context.Context, clusterName string) 
 	return nil
 }
 
-func (c *Cluster) Wait4SpokeClusterReady(ctx context.Context, clusterName string) (bool, error) {
+func (c *Cluster) WaitForSpokeClusterReady(ctx context.Context, clusterName string) (bool, error) {
 	listOpts := []client.ListOption{
 		client.MatchingLabels{
 			clusterLabel: clusterName,
@@ -297,6 +297,51 @@ func (c *Cluster) Wait4SpokeClusterReady(ctx context.Context, clusterName string
 		return false, err
 	}
 	return true, nil
+}
+
+func (c *Cluster) WaitForCSRCreated(ctx context.Context, spokeClusterName string) error {
+	nativeClient, err := kubernetes.NewForConfig(c.KubeConfig)
+	if err != nil {
+		return err
+	}
+	return wait.PollImmediateUntil(time.Second, func() (bool, error) {
+		csrList, err := nativeClient.CertificatesV1().CertificateSigningRequests().List(ctx, metav1.ListOptions{
+			LabelSelector: "open-cluster-management.io/cluster-name=" + spokeClusterName,
+		})
+		if err != nil {
+			return false, err
+		}
+		return len(csrList.Items) > 0, nil
+	}, ctx.Done())
+}
+
+func (c *Cluster) ApproveCSR(ctx context.Context, spokeClusterName string) error {
+	nativeClient, err := kubernetes.NewForConfig(c.KubeConfig)
+	if err != nil {
+		return err
+	}
+	csrList, err := nativeClient.CertificatesV1().
+		CertificateSigningRequests().
+		List(ctx, metav1.ListOptions{
+			LabelSelector: "open-cluster-management.io/cluster-name=" + spokeClusterName,
+		})
+	if err != nil {
+		return err
+	}
+	if len(csrList.Items) == 0 {
+		return fmt.Errorf("no csr found related to spoke cluster %q", spokeClusterName)
+	}
+	for _, csr := range csrList.Items {
+		if len(csr.Status.Certificate) == 0 {
+			_, err := nativeClient.CertificatesV1().
+				CertificateSigningRequests().
+				UpdateApproval(ctx, csr.Name, &csr, metav1.UpdateOptions{})
+			if err != nil {
+				return errors.Wrapf(err, "failed approving CSR %q for cluster %q", csr.Name, spokeClusterName)
+			}
+		}
+	}
+	return nil
 }
 
 func checkCsrStatus(status *certificatesv1.CertificateSigningRequestStatus) (approved bool, denied bool) {
