@@ -85,7 +85,7 @@ func main() {
 	}
 
 	klog.Info("wait for spoke-cluster register request")
-	ready, err := hubCluster.Wait4SpokeClusterReady(ctx, clusterName)
+	ready, err := hubCluster.WaitForSpokeClusterReady(ctx, clusterName)
 	if err != nil || !ready {
 		klog.Error(err, "Fail to waiting for register request")
 		os.Exit(1)

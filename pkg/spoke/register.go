@@ -5,7 +5,6 @@ import (
 	"context"
 	"embed"
 	"encoding/base64"
-	"fmt"
 	"strings"
 	"text/template"
 	"time"
@@ -89,15 +88,6 @@ type HubInfo struct {
 //go:embed resource
 var f embed.FS
 
-func getHubAPIServer(hubConfig *clientcmdapiv1.Config) (string, error) {
-	clusters := hubConfig.Clusters
-	if len(clusters) != 1 {
-		return "", fmt.Errorf("can not find the cluster in the cluster-info")
-	}
-	cluster := clusters[0].Cluster
-	return cluster.Server, nil
-}
-
 func NewSpokeCluster(name string, config *rest.Config, hubConfig *clientcmdapiv1.Config) (*Cluster, error) {
 	args := common.Args{
 		Schema: common.Scheme,
@@ -111,16 +101,12 @@ func NewSpokeCluster(name string, config *rest.Config, hubConfig *clientcmdapiv1
 		return nil, err
 	}
 
-	apiserver, err := getHubAPIServer(hubConfig)
-	if err != nil {
-		return nil, err
-	}
 	return &Cluster{
 		Name: name,
 		Args: args,
 		HubInfo: HubInfo{
 			KubeConfig: hubConfig,
-			APIServer:  apiserver,
+			APIServer:  config.Host,
 		},
 	}, nil
 }
