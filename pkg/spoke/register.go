@@ -223,7 +223,8 @@ func applyKlusterlet(ctx context.Context, k8sClient client.Client, file string, 
 		return err
 	}
 
-	err = k8sClient.Get(ctx, client.ObjectKey{Name: klusterlet.Name, Namespace: klusterlet.Namespace}, klusterlet)
+	latestKlusterlet := &ocmapiv1.Klusterlet{}
+	err = k8sClient.Get(ctx, client.ObjectKey{Name: klusterlet.Name, Namespace: klusterlet.Namespace}, latestKlusterlet)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			klog.V(common.LogDebug).InfoS("create klusterlet", "object", klog.KObj(klusterlet))
@@ -231,6 +232,7 @@ func applyKlusterlet(ctx context.Context, k8sClient client.Client, file string, 
 		}
 		return err
 	}
+	klusterlet.ResourceVersion = latestKlusterlet.ResourceVersion
 	klog.V(common.LogDebug).InfoS("update klusterlet", "object", klog.KObj(klusterlet))
 	return k8sClient.Update(ctx, klusterlet)
 }
