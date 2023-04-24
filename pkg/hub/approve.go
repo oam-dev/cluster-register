@@ -9,6 +9,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/pkg/errors"
+	authv1 "k8s.io/api/authentication/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -151,6 +152,15 @@ func (c *Cluster) GetHubUserToken(ctx context.Context) (string, error) {
 	err := common.ApplyK8sResource(ctx, f, c.Client, files)
 	if err != nil {
 		return token, err
+	}
+
+	cs, err := kubernetes.NewForConfig(c.KubeConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to get clientset: %w", err)
+	}
+	tokenReq, err := cs.CoreV1().ServiceAccounts(common.OpenClusterManagementNamespace).CreateToken(ctx, common.BootstrapSAName, &authv1.TokenRequest{}, metav1.CreateOptions{})
+	if err == nil {
+		return tokenReq.Status.Token, nil
 	}
 
 	saKey := client.ObjectKey{Name: common.BootstrapSAName, Namespace: common.OpenClusterManagementNamespace}
