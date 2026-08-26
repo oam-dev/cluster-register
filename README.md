@@ -23,7 +23,7 @@ helm install --create-namespace -n vela-system kubevela kubevela/vela-core
 
 cluster-register supports registering Managed Cluster by OCM.
 
-1. Use Initializer `ocm-cluster-manager` to create a Hub Cluster environment.
+1. Initialize the Hub Cluster environment using [`clusteradm`](https://github.com/open-cluster-management-io/clusteradm).
 
 ```shell
 # change to hub cluster
@@ -31,7 +31,8 @@ kubectl config use-context kind-hub
 ```
 
 ```shell
-kubectl apply -f https://raw.githubusercontent.com/oam-dev/kubevela/master/vela-templates/addons/auto-gen/ocm-cluster-manager.yaml
+curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
+clusteradm init --wait
 ```
 
 2. Export the kubeconfig of the Managed Cluster and store it in the Secret of the Hub Cluster

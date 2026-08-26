@@ -8,10 +8,19 @@ set -euo pipefail
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.35.5}"
 HUB_CLUSTER="${HUB_CLUSTER:-ocm-e2e-hub}"
 SPOKE_CLUSTER="${SPOKE_CLUSTER:-ocm-e2e-spoke}"
-OCM_CLUSTER_MANAGER_MANIFEST="${OCM_CLUSTER_MANAGER_MANIFEST:-https://raw.githubusercontent.com/oam-dev/kubevela/master/vela-templates/addons/auto-gen/ocm-cluster-manager.yaml}"
+CLUSTERADM_VERSION="${CLUSTERADM_VERSION:-latest}"
 WORKDIR="$(mktemp -d -t ocm-e2e-XXXXXX)"
 
 log() { echo "==> $*" >&2; }
+
+CLUSTERADM_BIN="clusteradm"
+if ! command -v clusteradm >/dev/null 2>&1; then
+  log "clusteradm not found in PATH, installing ${CLUSTERADM_VERSION} into ${WORKDIR}/bin"
+  mkdir -p "${WORKDIR}/bin"
+  curl -fsSL https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+    | INSTALL_DIR="${WORKDIR}/bin" USE_SUDO=false bash -s "${CLUSTERADM_VERSION}" >&2
+  CLUSTERADM_BIN="${WORKDIR}/bin/clusteradm"
+fi
 
 log "creating hub cluster '${HUB_CLUSTER}' (${KIND_NODE_IMAGE})"
 kind create cluster --name "${HUB_CLUSTER}" --image "${KIND_NODE_IMAGE}" --wait 5m
@@ -24,24 +33,8 @@ SPOKE_KUBECONFIG="${WORKDIR}/spoke.kubeconfig"
 kind get kubeconfig --name "${HUB_CLUSTER}" >"${HUB_KUBECONFIG}"
 kind get kubeconfig --name "${SPOKE_CLUSTER}" >"${SPOKE_KUBECONFIG}"
 
-log "installing the OCM hub control plane (ocm-cluster-manager) on '${HUB_CLUSTER}'"
-kubectl --kubeconfig "${HUB_KUBECONFIG}" apply -f "${OCM_CLUSTER_MANAGER_MANIFEST}"
-
-log "waiting for the open-cluster-management-hub namespace to appear"
-for _ in $(seq 1 30); do
-  if kubectl --kubeconfig "${HUB_KUBECONFIG}" get ns open-cluster-management-hub >/dev/null 2>&1; then
-    break
-  fi
-  sleep 10
-done
-
-log "waiting for the OCM hub controllers to become available"
-kubectl --kubeconfig "${HUB_KUBECONFIG}" wait deployment \
-  --all -n open-cluster-management \
-  --for=condition=Available --timeout=5m
-kubectl --kubeconfig "${HUB_KUBECONFIG}" wait deployment \
-  --all -n open-cluster-management-hub \
-  --for=condition=Available --timeout=5m
+log "installing the OCM hub control plane on '${HUB_CLUSTER}' via clusteradm init"
+"${CLUSTERADM_BIN}" init --wait --kubeconfig "${HUB_KUBECONFIG}" >&2
 
 # kind clusters share a docker network ("kind"); this is how the spoke's
 # registration agent reaches the hub apiserver.
