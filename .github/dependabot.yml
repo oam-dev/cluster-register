@@ -1,0 +1,35 @@
+# Dependabot reads this file from the default branch only; target-branch covers the release branches.
+# The actions are pinned by commit SHA, so without these updates the pins would only age.
+version: 2
+updates:
+  # GitHub Actions: one grouped PR a week per branch.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: master
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: release-1.1
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: release-1.0
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
