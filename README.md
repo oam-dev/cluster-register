@@ -101,3 +101,12 @@ kind-cluster1   true           https://hub-control-plane:6443   True     True   
 ```shell
 kubectl delete secret spoke-kubeconfig
 ```
+
+## Releases
+
+| Line | Branch | Latest | Used by KubeVela |
+| --- | --- | --- | --- |
+| 1.1 | `release-1.1` | [`v1.1.0-alpha.1`](https://github.com/oam-dev/cluster-register/releases/tag/v1.1.0-alpha.1) | `master`, 1.12 |
+| 1.0 | `release-1.0` | [`v1.0.4`](https://github.com/oam-dev/cluster-register/releases/tag/v1.0.4) | 1.10, 1.11 |
+
+Releases are Go module tags. How releases and backports work: [RELEASE.md](./RELEASE.md).
